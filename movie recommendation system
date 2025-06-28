@@ -1,0 +1,68 @@
+import pandas as pd
+import numpy as np
+import ast
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Load datasets
+movies = pd.read_csv('movies.csv')
+credits = pd.read_csv('credits.csv')
+
+# Merge on title
+movies = movies.merge(credits, on='title')
+
+# Keep relevant columns
+movies = movies[['movie_id', 'title', 'overview', 'genres', 'keywords', 'cast', 'crew']].dropna()
+
+# Helper functions
+def convert(text):
+    return [i['name'] for i in ast.literal_eval(text)]
+
+def get_director(text):
+    for i in ast.literal_eval(text):
+        if i['job'] == 'Director':
+            return i['name']
+    return ''
+
+def collapse(lst):
+    return ' '.join(i.replace(" ", "") for i in lst)
+
+# Apply transformations
+movies['genres'] = movies['genres'].apply(convert)
+movies['keywords'] = movies['keywords'].apply(convert)
+movies['cast'] = movies['cast'].apply(convert).apply(lambda x: x[:3])
+movies['crew'] = movies['crew'].apply(get_director)
+
+# Combine features into a single string
+movies['tags'] = movies['overview'] + ' ' + \
+                 movies['genres'].apply(collapse) + ' ' + \
+                 movies['keywords'].apply(collapse) + ' ' + \
+                 movies['cast'].apply(collapse) + ' ' + \
+                 movies['crew'].str.replace(" ", "")
+
+# Vectorize tags
+cv = CountVectorizer(max_features=5000, stop_words='english')
+vectors = cv.fit_transform(movies['tags']).toarray()
+
+# Compute similarity matrix
+similarity = cosine_similarity(vectors)
+
+# Recommendation function
+def recommend(movie):
+    if movie not in movies['title'].values:
+        return f"Movie '{movie}' not found in dataset."
+    idx = movies[movies['title'] == movie].index[0]
+    distances = list(enumerate(similarity[idx]))
+    movies_list = sorted(distances, key=lambda x: x[1], reverse=True)[1:6]
+    return [movies.iloc[i[0]].title for i in movies_list]
+
+# Example usage
+if __name__ == "__main__":
+    movie_name = input("Enter a movie title: ")
+    recommendations = recommend(movie_name)
+    print("\nRecommended Movies:")
+    if isinstance(recommendations, list):
+        for title in recommendations:
+            print("-", title)
+    else:
+        print(recommendations)
